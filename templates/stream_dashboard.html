@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实时用户行为看板</title>
+<style>
+*,::before,::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1923;font-family:'Segoe UI',system-ui,sans-serif;color:#e4edf5;padding:1rem}
+.dashboard{max-width:1200px;margin:0 auto}
+h1{font-size:1.3rem;margin-bottom:1rem;color:#8ab4f8}
+h1 small{font-weight:400;font-size:.8rem;color:#5a7a9a}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}}
+.card{background:#1a2736;border-radius:12px;padding:1rem;border:1px solid #243447}
+.card .value{font-size:1.8rem;font-weight:700;color:#8ab4f8;margin:.3rem 0}
+.card .label{font-size:.8rem;color:#7a9ab8}
+.card .value.green{color:#34c759}
+.card .value.orange{color:#ff9f0a}
+.card .value.red{color:#ff453a}
+.card .value.purple{color:#bf5af2}
+.section{margin-bottom:1.5rem}
+.section h2{font-size:.95rem;color:#8ab4f8;margin-bottom:.75rem}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+thead th{background:#243447;padding:.5rem;text-align:center;color:#7a9ab8;font-weight:600}
+tbody td{padding:.45rem;border-bottom:1px solid #1e3144;text-align:center}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dot-green{background:#34c759}
+.dot-orange{background:#ff9f0a}
+.dot-red{background:#ff453a}
+.conn-status{padding:.4rem .8rem;border-radius:20px;font-size:.75rem;display:inline-block}
+.conn-live{background:#1a3a2a;color:#34c759;border:1px solid #34c75933}
+.conn-paused{background:#3a2a1a;color:#ff9f0a;border:1px solid #ff9f0a33}
+#last-update{color:#5a7a9a;font-size:.75rem;text-align:right;margin-top:.5rem}
+</style>
+</head>
+<body>
+<div class="dashboard">
+  <h1>实时用户行为看板 <small>Kaggle 2019-Oct · Kafka → Flink → 3 模型推理</small></h1>
+
+  <div class="grid" id="metrics-grid">
+    <div class="card"><div class="label">累计事件</div><div class="value" id="total_events">—</div></div>
+    <div class="card"><div class="label">累计 Session</div><div class="value" id="total_sessions">—</div></div>
+    <div class="card"><div class="label">累计购买</div><div class="value green" id="total_purchases">—</div></div>
+    <div class="card"><div class="label">购买率 (XGBoost>0.5)</div><div class="value orange" id="high_prob_pct">—</div></div>
+    <div class="card"><div class="label">1分钟 浏览</div><div class="value" id="recent_views">—</div></div>
+    <div class="card"><div class="label">1分钟 加购</div><div class="value orange" id="recent_carts">—</div></div>
+    <div class="card"><div class="label">1分钟 购买</div><div class="value green" id="recent_purchases">—</div></div>
+    <div class="card"><div class="label">平均购买概率</div><div class="value purple" id="avg_buy_prob">—</div></div>
+  </div>
+
+  <div class="section">
+    <h2>最新推断</h2>
+    <table><thead><tr><th>Session</th><th>事件</th><th>XGBoost</th><th>MLP</th><th>异常分</th><th>时间</th></tr></thead>
+    <tbody id="recent-table"><tr><td colspan="6" style="color:#5a7a9a;padding:1rem">等待数据...</td></tr></tbody></table>
+  </div>
+
+  <div id="last-update"></div>
+</div>
+
+<script>
+const es = new EventSource("/stream");
+es.onmessage = function(e) {
+  const d = JSON.parse(e.data);
+  for (const k of ["total_events","total_sessions","total_purchases","high_prob_pct","recent_views","recent_carts","recent_purchases","avg_buy_prob","avg_anomaly"]) {
+    const el = document.getElementById(k);
+    if (el) el.textContent = d[k] ?? "—";
+  }
+  if (d.recent_rows) {
+    document.getElementById("recent-table").innerHTML = d.recent_rows.map(r =>
+      `<tr>
+        <td>${r.session_id}</td>
+        <td><span class="status-dot ${r.event_type==='purchase'?'dot-green':r.event_type==='cart'?'dot-orange':'dot-red'}"></span>${r.event_type}</td>
+        <td>${r.xgb}</td>
+        <td>${r.mlp}</td>
+        <td>${r.anomaly}</td>
+        <td>${r.time}</td>
+      </tr>`
+    ).join("");
+  }
+  document.getElementById("last-update").textContent = "更新于 " + new Date().toLocaleTimeString();
+};
+es.onerror = () => console.log("SSE 断开");
+</script>
+</body>
+</html>
